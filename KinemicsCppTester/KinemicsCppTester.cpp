@@ -4,11 +4,29 @@
 #include <iostream>
 #include "Kinemics.h"
 #include "Matrix.h"
-
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+#include <math.h>
 using namespace std;
 
 int main()
 {
+#pragma region Eigen Example
+    double angle_pi = 90.0 / 180.0 * M_PI;
+    Eigen::AngleAxisd rotx(angle_pi, Eigen::Vector3d(1, 0, 0));
+    Eigen::AngleAxisd roty(angle_pi, Eigen::Vector3d(0, 1, 0));
+    Eigen::AngleAxisd rotz(angle_pi, Eigen::Vector3d(0, 0, 1));
+    auto rot_xyz = rotx * roty * rotz;
+    cout << rot_xyz.matrix() << endl;
+    cout << rot_xyz.matrix().inverse() << endl;
+    cout << Eigen::Matrix3d::Identity() << endl;
+    cout << (rot_xyz * Eigen::Vector3d(0, 0, 1)).matrix() << endl;
+#pragma endregion
+
+    
+    
+    
+    return 0;
     //float j1 = 0, j2 = 0, j3 = 0, j4 = 0, j5 = -90, j6 = 0;
     float j1 = -45, j2 = -45, j3 = -45, j4 = 0, j5 = -90, j6 = 0;
     //float j1 = 21.8f, j2 = -52.2f, j3 = 2.5f, j4 = 0, j5 = 0, j6 = 0;
