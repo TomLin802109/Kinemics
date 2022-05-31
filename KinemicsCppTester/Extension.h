@@ -10,3 +10,5 @@ double toRad(double degree);
 
 double toDeg(double rad);
 
+float round(float num, int index);
+double round(double num, int index);

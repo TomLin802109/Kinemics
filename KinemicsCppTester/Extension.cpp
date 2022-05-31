@@ -15,3 +15,13 @@ double toRad(double degree) {
 double toDeg(double rad) {
 	return rad / 3.14159265358979323846 * 180;
 }
+
+float round(float num, int index) {
+	auto multiplier = pow(10, index);
+	return round(num * multiplier) / multiplier;
+};
+
+double round(double num, int index) {
+	auto multiplier = pow(10, index);
+	return round(num * multiplier) / multiplier;
+};

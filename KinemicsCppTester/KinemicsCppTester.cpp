@@ -9,9 +9,11 @@ using namespace std;
 
 int main()
 {
-    float j1 = 0, j2 = 0, j3 = 0, j4 = 0, j5 = -90, j6 = 0;
-    //float j1 = 0, j2 = -45, j3 = -45, j4 = 45, j5 = 45, j6 = 45;    
-    /*DH_param params[7]{
+    //float j1 = 0, j2 = 0, j3 = 0, j4 = 0, j5 = -90, j6 = 0;
+    float j1 = -45, j2 = -45, j3 = -45, j4 = 0, j5 = -90, j6 = 0;
+    //float j1 = 21.8f, j2 = -52.2f, j3 = 2.5f, j4 = 0, j5 = 0, j6 = 0;
+    //yaskawa
+    vector<DH_param> dhTable = {
         DH_param{0,0,0,0},
         DH_param{-90,155,0,-90},
         DH_param{180,614,0,0},
@@ -19,17 +21,20 @@ int main()
         DH_param{90,0,0,0},
         DH_param{-90,0,0,0},
         DH_param{180,0,100,0}
-    };*/
-    DH_param params[7]{
+    };
+    /*vector<DH_param> dhTable{
         DH_param{0,0,0,0},
         DH_param{-90,-30,0,0},
         DH_param{0,340,0,0},
         DH_param{-90,-40,338,0},
         DH_param{90,0,0,0},
         DH_param{-90,0,0,0},
+    };*/
+    vector<JointLimit> limts = {
+        JointLimit{180,-180}
     };
-    DH_table dh{ sizeof(params) / sizeof(*params), params };
-    Kinemics _k(dh, WorldCoordinate{ 0,0,0,0,0,0 });
+    RobotSpec spec{ dhTable,limts };
+    RobotArmKinemics _k(spec, WorldCoordinate{ 0,0,0,0,0,0 });
 
     LARGE_INTEGER cpuFreq;
     LARGE_INTEGER startTime;
@@ -45,7 +50,8 @@ int main()
     cout << "world: " << w.x << "," << w.y << "," << w.z << "," << w.a << "," << w.b << "," << w.c << endl;
 
     QueryPerformanceCounter(&startTime);
-    auto j = _k.Inverse(WorldCoordinate{ 381.3f,151.8f,19.5f });
+    //auto j = _k.Inverse(WorldCoordinate{ 381.3f,151.8f,19.5f,0,0,35.0f });
+    auto j = _k.Inverse(w);
     QueryPerformanceCounter(&endTime);
     runTime = (((endTime.QuadPart - startTime.QuadPart) * 1000.0f) / cpuFreq.QuadPart);
     cout << "joint: " << j.j1 << "," << j.j2 << "," << j.j3 << "," << j.j4 << "," << j.j5 << "," << j.j6 << endl;

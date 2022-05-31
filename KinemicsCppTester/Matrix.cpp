@@ -28,19 +28,19 @@ namespace QrMatrix {
 	Matrix4f getRotate_xyz(float rx_pi, float ry_pi, float rz_pi) {
 		auto rx = getRotate_x(rx_pi);
 		auto ry = getRotate_y(ry_pi);
-		auto rz = getRotate_y(rz_pi);
+		auto rz = getRotate_z(rz_pi);
 		return Multiply(Multiply(rx, ry), rz);
 	}
 	Matrix4f getRotate_zyx(float rz_pi, float ry_pi, float rx_pi) {
-		auto rz = getRotate_y(rz_pi);
+		auto rz = getRotate_z(rz_pi);
 		auto ry = getRotate_y(ry_pi);
 		auto rx = getRotate_x(rx_pi);
 		return Multiply(Multiply(rz, ry), rx);
 	}
 	Matrix4f getRotate_zyz(float rz1_pi, float ry_pi, float rz2_pi) {
-		auto rz1 = getRotate_y(rz1_pi);
+		auto rz1 = getRotate_z(rz1_pi);
 		auto ry = getRotate_y(ry_pi);
-		auto rz2 = getRotate_x(rz2_pi);
+		auto rz2 = getRotate_z(rz2_pi);
 		return Multiply(Multiply(rz1, ry), rz2);
 	}
 	Matrix4f Multiply(Matrix4f A, Matrix4f B) {

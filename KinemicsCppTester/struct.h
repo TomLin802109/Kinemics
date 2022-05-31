@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 
 struct DH_param
 {
@@ -11,10 +12,14 @@ struct DH_param
 	}
 };
 
-struct DH_table
-{
-	int size;
-	DH_param* params;
+struct JointLimit {
+	float postive;
+	float negative;
+};
+
+struct RobotSpec {
+	std::vector<DH_param> dh_table;
+	std::vector<JointLimit> limits;
 };
 
 struct PostureCfg {
