@@ -3,6 +3,7 @@
 #include "struct.h"
 #include "Extension.h"
 
+
 namespace QrMatrix {
 	Matrix4f getRotate_x(float angle_pi);
 	Matrix4f getRotate_y(float angle_pi);

@@ -12,7 +12,7 @@ using namespace std;
 int main()
 {
 #pragma region Eigen Example
-    double angle_pi = 90.0 / 180.0 * M_PI;
+    /*double angle_pi = 90.0 / 180.0 * M_PI;
     Eigen::AngleAxisd rotx(angle_pi, Eigen::Vector3d(1, 0, 0));
     Eigen::AngleAxisd roty(angle_pi, Eigen::Vector3d(0, 1, 0));
     Eigen::AngleAxisd rotz(angle_pi, Eigen::Vector3d(0, 0, 1));
@@ -20,13 +20,18 @@ int main()
     cout << rot_xyz.matrix() << endl;
     cout << rot_xyz.matrix().inverse() << endl;
     cout << Eigen::Matrix3d::Identity() << endl;
-    cout << (rot_xyz * Eigen::Vector3d(0, 0, 1)).matrix() << endl;
+    cout << (rot_xyz * Eigen::Vector3d(0, 0, 1)).matrix() << endl;*/
+    Eigen::Matrix4d m;
+    m << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16;
+    cout << "m10 = " << m(1, 0) << endl;
+    cout << "m01 = " << m(0, 1) << endl;
+    cout << "m30 = " << m(3, 0) << endl;
+    cout << "m03 = " << m(0, 3) << endl;
+    cout << m * Eigen::Vector4d(1, 2, 3, 1) << endl;
+
 #pragma endregion
 
-    
-    
-    
-    return 0;
+    //return 0;
     //float j1 = 0, j2 = 0, j3 = 0, j4 = 0, j5 = -90, j6 = 0;
     float j1 = -45, j2 = -45, j3 = -45, j4 = 0, j5 = -90, j6 = 0;
     //float j1 = 21.8f, j2 = -52.2f, j3 = 2.5f, j4 = 0, j5 = 0, j6 = 0;
@@ -52,7 +57,7 @@ int main()
         JointLimit{180,-180}
     };
     RobotSpec spec{ dhTable,limts };
-    RobotArmKinemics _k(spec, WorldCoordinate{ 0,0,0,0,0,0 });
+    RobotArmKinemics _k(spec, WorldCoordinate{ 0,0,150,0,45,0 });
 
     LARGE_INTEGER cpuFreq;
     LARGE_INTEGER startTime;
@@ -65,14 +70,14 @@ int main()
     QueryPerformanceCounter(&endTime);
     runTime = (((endTime.QuadPart - startTime.QuadPart) * 1000.0f) / cpuFreq.QuadPart);
     cout << "Cost Time: " << runTime << endl;
-    cout << "world: " << w.x << "," << w.y << "," << w.z << "," << w.a << "," << w.b << "," << w.c << endl;
+    cout << "Forward World: " << w.x << "," << w.y << "," << w.z << "," << w.a << "," << w.b << "," << w.c << endl;
 
     QueryPerformanceCounter(&startTime);
     //auto j = _k.Inverse(WorldCoordinate{ 381.3f,151.8f,19.5f,0,0,35.0f });
     auto j = _k.Inverse(w);
     QueryPerformanceCounter(&endTime);
     runTime = (((endTime.QuadPart - startTime.QuadPart) * 1000.0f) / cpuFreq.QuadPart);
-    cout << "joint: " << j.j1 << "," << j.j2 << "," << j.j3 << "," << j.j4 << "," << j.j5 << "," << j.j6 << endl;
+    cout << "Inverse Joint: " << j.j1 << "," << j.j2 << "," << j.j3 << "," << j.j4 << "," << j.j5 << "," << j.j6 << endl;
 #ifdef  _DEBUG
     cout << "Cost Time: " << runTime << endl;
 #endif

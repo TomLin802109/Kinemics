@@ -1,10 +1,15 @@
 #pragma once
-#include "Matrix.h"
+
 #include "PolynomialRoot.h"
+#include "RotationMatrix.h"
+#include "struct.h"
+#include "Matrix.h"
 #include <iostream>
 #include <vector>
 
-using namespace QrMatrix;
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+
 using namespace std;
 
 class RobotArmKinemics {
@@ -17,108 +22,101 @@ public:
 		k2 = get_coeffs_k2();
 		k3 = get_coeffs_k3();
 		k4 = get_coeffs_k4();
-		//std::cout << k1[0] << "," << k1[1] << "," << k1[2] << std::endl;
-		//std::cout << k2[0] << "," << k2[1] << "," << k2[2] << std::endl;
-		//std::cout << k3[0] << "," << k3[1] << "," << k3[2] << std::endl;
-		//std::cout << k4[0] << "," << k4[1] << "," << k4[2] << std::endl;
+		//std::cout << std::fixed << std::setprecision(2);
+		std::cout << "K1 coeff " << k1[0] << "," << k1[1] << "," << k1[2] << std::endl;
+		std::cout << "K2 coeff " << k2[0] << "," << k2[1] << "," << k2[2] << std::endl;
+		std::cout << "K3 coeff " << k3[0] << "," << k3[1] << "," << k3[2] << std::endl;
+		std::cout << "K4 coeff " << k4[0] << "," << k4[1] << "," << k4[2] << std::endl;
 	}
 	~RobotArmKinemics() {
 		delete[] k1, k2, k3, k4;
 	}
 	WorldCoordinate Forward(JointCoordinate jc) {
 		float crd[7]{ jc.j1,jc.j2 ,jc.j3 ,jc.j4 ,jc.j5 ,jc.j6 };
-		Matrix4f mat{
-			1,0,0,0,
-			0,1,0,0,
-			0,0,1,0,
-			0,0,0,1
-		};
+		Eigen::Matrix4d mat = Eigen::Matrix4d::Identity();
+		std::cout << "Forward Kinematic" << std::endl;
 		for (int i = 0; i < dh_table.size(); i++) {
 			auto param = dh_table[i];
-			mat = Multiply(mat, getTransformMatrix(DH_param{ param.alpha, param.a, param.d, crd[i] + param.theta }));
-			std::cout<<"No." << i+1 << " x " << mat.r03 << " y " << mat.r13 << " z " << mat.r23 << std::endl;
-			/*std::cout << "tool x: " << mat.r00 << "," << mat.r10 << "," << mat.r20 << std::endl;
-			std::cout << "tool y: " << mat.r01 << "," << mat.r11 << "," << mat.r21 << std::endl;
-			std::cout << "tool z: " << mat.r02 << "," << mat.r12 << "," << mat.r22 << std::endl;
-			std::cout << std::endl;*/
+			mat = mat * getTransMat_Craig(DH_param{ param.alpha, param.a, param.d, crd[i] + param.theta });
+			std::cout << "No." << i + 1 << endl << mat << endl;
 		}
-		auto shift = Multiply(mat, Vector4f{ tool.x,tool.y,tool.z });
-		Matrix4f tool_rot = getRotate_xyz(toRad(tool.a), toRad(tool.b), toRad(tool.c));
-		Vector3f angle = getEulerAngle_xyz(Multiply(mat, tool_rot));
-		return WorldCoordinate{ mat.r03 + shift.x,mat.r13 + shift.y,mat.r23 + shift.z, angle.x,angle.y,angle.z };
-		//return WorldCoordinate{ mat.r03 ,mat.r13,mat.r23 };
+		
+		Matrix3d r07 = mat.block<3, 3>(0, 0);
+		Eigen::Vector3d shift = mat.block<3, 3>(0, 0) * Eigen::Vector3d(tool.x, tool.y, tool.z);
+		mat.block<3, 3>(0, 0) = mat.block<3, 3>(0, 0) * RotationMatrix::GetRotate_XYZ(toRad(tool.a), toRad(tool.b), toRad(tool.c));
+		std::cout << std::endl << "Final Transformation Matrix" << endl << mat << endl;
+		
+		Eigen::Vector3f angle = RotationMatrix::GetEulerAngle_XYZ(mat.block<3, 3>(0, 0));
+		//return WorldCoordinate{ (float)(mat(0,3) ),(float)(mat(1,3) ), (float)(mat(2,3) ), angle.x(),angle.y(),angle.z() };
+		return WorldCoordinate{ (float)(mat(0,3) + shift(0,0)),(float)(mat(1,3) + shift(1,0)), (float)(mat(2,3) + shift(2,0)), angle.x(),angle.y(),angle.z() };
 	};
 	JointCoordinate Inverse(WorldCoordinate rc, PostureCfg cfg = PostureCfg{}) {
+		//Calculate the transformation matrix from base to flange.
+		Matrix4d t07 = Matrix4d::Identity();
+		Matrix3d toolRot = RotationMatrix::GetRotate_XYZ(toRad(tool.a), toRad(tool.b), toRad(tool.c));
+		t07.block<3, 3>(0, 0) = RotationMatrix::GetRotate_XYZ(toRad(rc.a), toRad(rc.b), toRad(rc.c)) * toolRot.inverse();
+		Vector3d toolShift = t07.block<3, 3>(0, 0) * Vector3d(tool.x, tool.y, tool.z);
+		t07.block<3, 1>(0, 3) = Vector3d(rc.x, rc.y, rc.z) - toolShift;
+		std::cout << std::endl << "Inverse Kinematic" << std::endl;
+		std::cout << "t07 = " << endl << t07 << std::endl;
 
-		Matrix4f mat = getRotate_xyz(toRad(rc.a), toRad(rc.b), toRad(rc.c));
-		mat.r03 = rc.x; mat.r13 = rc.y; mat.r23 = rc.z;
-		mat = Multiply(mat, QrMatrix::Inverse(getRotate_xyz(toRad(tool.a), toRad(tool.b), toRad(tool.c))));
-		mat = Multiply(mat, QrMatrix::Inverse(getTransformMatrix(dh_table[6])));
-		Vector3f p4{ mat.r03 ,mat.r13,mat.r23 };
+		//Calculate position of joint 4
+		Matrix4d t06 = t07 * getTransMat_Craig(dh_table[6]).inverse();
+		std::cout << "t06 = " << endl << t06 << std::endl;
+		Vector3d p4 = t06.block<3, 1>(0, 3);
+		std::cout << "p4=p6= " << p4.x() << "," << p4.y() << "," << p4.z() << std::endl;
 		
-		std::cout << "p4=p6= " << mat.r03 << "," << mat.r13 << "," << mat.r23 << std::endl;
-		std::cout << "tool x: " << mat.r00 << "," << mat.r10 << "," << mat.r20 << std::endl;
-		std::cout << "tool y: " << mat.r01 << "," << mat.r11 << "," << mat.r21 << std::endl;
-		std::cout << "tool z: " << mat.r02 << "," << mat.r12 << "," << mat.r22 << std::endl;
-		//Vector3f p4{ rc.x,rc.y,rc.z };
-		std::cout << "p4=p6= " << p4.x << "," << p4.y << "," << p4.z << std::endl;
+		//Solve J1 ~J3
 		vector<JointCoordinate> jointSols;
-		vector<Vector3f> pos;
-		
+		std::cout << std::endl << "All J1~J3 Solution" << std::endl;
 		auto j3s_pi= solveJ3_method3(p4);
 		for (int i = 0; i < j3s_pi.size(); i++) {
-			std::cout << "j3 solution:" << toDeg(j3s_pi[i]) << std::endl;
 			auto j2s_pi = solveJ2(p4, j3s_pi[i]);
 			for (int j = 0; j < j2s_pi.size(); j++) {
 				auto j1s_pi = solveJ1(p4, j3s_pi[i], j2s_pi[j]);
 				for (int k = 0; k < j1s_pi.size(); k++) {
-					std::cout << "j3,j2,j1: (" << toDeg(j3s_pi[i]) << "," << toDeg(j2s_pi[j]) << "," << toDeg(j1s_pi[k]) << ")" << std::endl;
-					jointSols.push_back(JointCoordinate{ toDeg(j1s_pi[k]),toDeg(j2s_pi[j]),toDeg(j3s_pi[i]) });
+					if (validJ4Position(toDeg(j1s_pi[k]), toDeg(j2s_pi[j]), toDeg(j3s_pi[i]), p4)) {
+						std::cout << "Correct solution of (J1, J2, J3) = (" << toDeg(j1s_pi[k]) << "," << toDeg(j2s_pi[j]) << "," << toDeg(j3s_pi[i]) << ")" << std::endl;
+						jointSols.push_back(JointCoordinate{ toDeg(j1s_pi[k]),toDeg(j2s_pi[j]),toDeg(j3s_pi[i]) });
+					}
 				}
 			}
-			/*float j1_pi = solveJ1(p4, j3s_pi[i], j2_pi);
-			std::cout << "j2:" << toDeg(j2_pi) << std::endl;
-			std::cout << "j1:" << toDeg(j1_pi) << std::endl;*/
 		}
 
-		vector<Matrix4f> rots;
 		for (int i = 0; i < jointSols.size(); i++) {
-			vector<float> jointAngle = { jointSols[i].j1,jointSols[i].j2 ,jointSols[i].j3 };
-			Matrix4f t03{
-			1,0,0,0,
-			0,1,0,0,
-			0,0,1,0,
-			0,0,0,1
-			};
-			for (int j = 0; j <3; j++) {
+			vector<float> jointAngle = { jointSols[i].j1,jointSols[i].j2,jointSols[i].j3 };
+			Matrix4d t03 = Matrix4d::Identity();
+			for (int j = 0; j < 3; j++) {
 				auto param = dh_table[j];
-				t03 = Multiply(t03, getTransformMatrix(DH_param{ param.alpha, param.a, param.d, jointAngle[j] }));
-				/*if(j==2)
-					std::cout << "No." << j + 1 << " x " << t03.r03 << " y " << t03.r13 << " z " << t03.r23 << std::endl;*/
+				t03 = t03 * getTransMat_Craig(DH_param{ param.alpha, param.a, param.d, jointAngle[j] });
 			}
-			auto t04 = Multiply(t03, getTransformMatrix(dh_table[3]));
-			
-			Vector3f tp{ t04.r03 ,t04.r13,t04.r23 };
-			auto cd1 = abs(round(tp.x, 3) - round(p4.x, 3));
-			auto cd2 = abs(round(tp.y, 3) - round(p4.y, 3));
-			auto cd3 = abs(round(tp.z, 3) - round(p4.z, 3));
-			std::cout << "tp= " << t04.r03 << "," << t04.r13 << "," << t04.r23 << std::endl;
-			if ( cd1 < 3E-2 &&cd2 < 3E-2 &&cd3 < 3E-2) {
-				
-				std::cout << "match sol(j1,j2,j3)= " << jointAngle[0]-dh_table[0].theta << "," << jointAngle[1] - dh_table[1].theta << "," << jointAngle[2] - dh_table[2].theta << std::endl;
-				rots.push_back(t03);
-			}
+			Matrix4d t46 = t03.inverse() * t06;
+			Vector3f eulerAngle = RotationMatrix::GetEulerAngle_ZYZ(t46.block<3, 3>(0, 0));
+			jointSols[i].j4 = eulerAngle.x();
+			jointSols[i].j5 = eulerAngle.y();
+			jointSols[i].j6 = eulerAngle.z();
+			std::cout << "(J4,J5,J6) = (" << eulerAngle.x() << ", " << eulerAngle.y() << ", " << eulerAngle.z() << ")" << endl;
 		}
-		auto t06 = getRotate_xyz(toRad(rc.a), toRad(rc.b), toRad(rc.c));
-		auto tmpx = getRotate_x(toRad(rc.a));
-		auto tmpy = getRotate_y(toRad(rc.b));
-		auto tmpz = getRotate_z(toRad(rc.c));
-		auto ttt = Multiply(Multiply(tmpx, tmpy), tmpz);
-		for (int i = 0; i < rots.size(); i++) {
-			rots[i] = Multiply(QrMatrix::Inverse(rots[i]), t06);
-			auto eulerAngle = getEulerAngle_zyz(rots[i]);
-			cout << "(j4,j5,j6)= (" << eulerAngle.x << "," << eulerAngle.y << "," << eulerAngle.z << ")" << endl;
-		}
+		
+		//Eigen::AngleAxisd rotx(toRad(rc.a), Eigen::Vector3d(1, 0, 0));
+		//Eigen::AngleAxisd roty(toRad(rc.b), Eigen::Vector3d(0, 1, 0));
+		//Eigen::AngleAxisd rotz(toRad(rc.c), Eigen::Vector3d(0, 0, 1));
+		//
+		//Eigen::Matrix4d tr06 = Eigen::Matrix4d::Identity();
+		//tr06.block<3, 3>(0, 0) = (rotx * roty * rotz).matrix();
+		//tr06.block<3, 1>(0, 3) = Eigen::Vector3d(rc.x, rc.y, rc.z);
+		//cout << "T06 = " << endl << tr06 << endl;
+		//for (int i = 0; i < joints.size(); i++) {
+		//	Eigen::Matrix4d rot;
+		//	rot << rots[i].r00, rots[i].r01, rots[i].r02, rots[i].r03,
+		//		rots[i].r10, rots[i].r11, rots[i].r12, rots[i].r13,
+		//		rots[i].r20, rots[i].r21, rots[i].r22, rots[i].r23,
+		//		rots[i].r30, rots[i].r31, rots[i].r32, rots[i].r33;
+		//	Eigen::Matrix4d t46 = (rot.inverse() * tr06);
+		//	cout << "T03 = " << endl << rot << endl;
+		//	auto eulerAngle = getEulerAngle_xyz(t46);
+		//	cout << "(J4,J5,J6)= (" << eulerAngle.x << "," << eulerAngle.y << "," << eulerAngle.z << ")" << endl;
+		//}
 
 		
 		return JointCoordinate{};
@@ -127,94 +125,94 @@ private:
 	vector<DH_param> dh_table;
 	vector<JointLimit> limits;
 	WorldCoordinate tool;
-	float* k1;
-	float* k2;
-	float* k3;
-	float* k4;
-	Matrix4f getTransformMatrix(DH_param param) {
-		Matrix4f rx = getRotate_x(toRad(param.alpha));
-		Matrix4f rz = getRotate_z(toRad(param.theta));
-		Matrix4f tx = Matrix4f{
-			1,0,0,param.a,
-			0,1,0,0,
-			0,0,1,0,
-			0,0,0,1
-		};
-		Matrix4f tz = Matrix4f{
-			1,0,0,0,
-			0,1,0,0,
-			0,0,1,param.d,
-			0,0,0,1
-		};
-		return Multiply(Multiply(rx, tx), Multiply(rz, tz));
+	double* k1;
+	double* k2;
+	double* k3;
+	double* k4;
+
+	/// <summary>
+	/// Using Craig method to get the transformation matrix of DH paramteres.
+	/// </summary>
+	/// <param name="param">DH paramteres</param>
+	/// <returns>Transformation matrix</returns>
+	Eigen::Matrix4d getTransMat_Craig(DH_param param) {
+		Eigen::AngleAxisd rx(toRad(param.alpha), Eigen::Vector3d(1, 0, 0));
+		Eigen::AngleAxisd rz(toRad(param.theta), Eigen::Vector3d(0, 0, 1));
+		Eigen::Matrix4d matx = Eigen::Matrix4d::Identity();
+		matx.block<3, 3>(0, 0) = rx.matrix();
+		Eigen::Matrix4d matz = Eigen::Matrix4d::Identity();
+		matz.block<3, 3>(0, 0) = rz.matrix();
+		Eigen::Matrix4d tx = Eigen::Matrix4d::Identity();
+		tx.block<3, 1>(0, 3) = Eigen::Vector3d(param.a, 0, 0);
+		Eigen::Matrix4d tz = Eigen::Matrix4d::Identity();
+		tz.block<3, 1>(0, 3) = Eigen::Vector3d(0, 0, param.d);
+		return matx * tx * matz * tz;
 	}
+
 #pragma region k functions
 	///k functions are u*cos(th)+v*sin(th)+w
-	float* get_coeffs_k1() {
-		float* ptr = new float[3]{
+	double* get_coeffs_k1() {
+		double* ptr = new double[3]{
 			dh_table[3].a,
-			dh_table[3].d * sinf(toRad(dh_table[3].alpha)),
+			dh_table[3].d * sin(toRad(dh_table[3].alpha)),
 			dh_table[2].a
 		};
 		return ptr;
 	}
-	float* get_coeffs_k2() {
-		float alpha2_pi = toRad(dh_table[2].alpha);
-		float alpha3_pi = toRad(dh_table[3].alpha);
-		float* ptr = new float[3]{
-			dh_table[3].d * cosf(alpha2_pi) * sinf(alpha3_pi),
-			-dh_table[3].a * cosf(alpha2_pi),
-			dh_table[2].d * sinf(alpha2_pi) + dh_table[3].d * cosf(alpha3_pi) * sinf(alpha2_pi)
+	double* get_coeffs_k2() {
+		double alpha2_pi = toRad(dh_table[2].alpha);
+		double alpha3_pi = toRad(dh_table[3].alpha);
+		double* ptr = new double[3]{
+			dh_table[3].d * cos(alpha2_pi) * sin(alpha3_pi),
+			-dh_table[3].a * cos(alpha2_pi),
+			dh_table[2].d * sin(alpha2_pi) + dh_table[3].d * cos(alpha3_pi) * sin(alpha2_pi)
 		};
 		return ptr;
 	}
-	float* get_coeffs_k3() {
-		float alpha2_pi = toRad(dh_table[2].alpha);
-		float alpha3_pi = toRad(dh_table[3].alpha);
-		float* ptr = new float[3]{
-			2 * (dh_table[2].a * dh_table[3].a + dh_table[1].d * dh_table[3].d * sinf(alpha2_pi) * sinf(alpha3_pi)),
-			2 * (dh_table[3].a * dh_table[1].d * sinf(alpha2_pi) + dh_table[2].a * dh_table[3].d * sinf(alpha3_pi)),
-			powf(dh_table[1].a,2) + powf(dh_table[2].a,2) + powf(dh_table[3].a,2) +
-			powf(dh_table[1].d,2) + powf(dh_table[2].d,2) + powf(dh_table[3].d,2) +
-			2 * (dh_table[1].d * dh_table[2].d * cosf(alpha2_pi) + dh_table[1].d * dh_table[3].d * cosf(alpha2_pi) * cosf(alpha3_pi) + dh_table[2].d * dh_table[3].d * cosf(alpha3_pi))
+	double* get_coeffs_k3() {
+		double alpha2_pi = toRad(dh_table[2].alpha);
+		double alpha3_pi = toRad(dh_table[3].alpha);
+		double* ptr = new double[3]{
+			2 * (dh_table[2].a * dh_table[3].a + dh_table[1].d * dh_table[3].d * sin(alpha2_pi) * sin(alpha3_pi)),
+			2 * (dh_table[3].a * dh_table[1].d * sin(alpha2_pi) + dh_table[2].a * dh_table[3].d * sin(alpha3_pi)),
+			pow(dh_table[1].a,2) + pow(dh_table[2].a,2) + pow(dh_table[3].a,2) +
+			pow(dh_table[1].d,2) + pow(dh_table[2].d,2) + pow(dh_table[3].d,2) +
+			2 * (dh_table[1].d * dh_table[2].d * cos(alpha2_pi) + dh_table[1].d * dh_table[3].d * cos(alpha2_pi) * cos(alpha3_pi) + dh_table[2].d * dh_table[3].d * cos(alpha3_pi))
 		};
 		return ptr;
 	}
-	float* get_coeffs_k4() {
-		float alpha1_pi = toRad(dh_table[1].alpha);
-		float alpha2_pi = toRad(dh_table[2].alpha);
-		float alpha3_pi = toRad(dh_table[3].alpha);
-		float* ptr = new float[3]{
-			-dh_table[3].d * cosf(alpha1_pi) * sinf(alpha2_pi) * sinf(alpha3_pi),
-			dh_table[3].a * cosf(alpha1_pi) * sinf(alpha2_pi),
-			dh_table[1].d * cosf(alpha1_pi) + dh_table[2].d * cosf(alpha1_pi) * cosf(alpha2_pi) + dh_table[3].d * cosf(alpha1_pi) * cosf(alpha2_pi) * cosf(alpha3_pi)
+	double* get_coeffs_k4() {
+		double alpha1_pi = toRad(dh_table[1].alpha);
+		double alpha2_pi = toRad(dh_table[2].alpha);
+		double alpha3_pi = toRad(dh_table[3].alpha);
+		double* ptr = new double[3]{
+			-dh_table[3].d * cos(alpha1_pi) * sin(alpha2_pi) * sin(alpha3_pi),
+			dh_table[3].a * cos(alpha1_pi) * sin(alpha2_pi),
+			dh_table[1].d * cos(alpha1_pi) + dh_table[2].d * cos(alpha1_pi) * cos(alpha2_pi) + dh_table[3].d * cos(alpha1_pi) * cos(alpha2_pi) * cos(alpha3_pi)
 		};
 		return ptr;
 	}
 #pragma endregion
 
-	std::vector<float> solveJ3_method3(Vector3f p4) {
+	vector<float> solveJ3_method3(Vector3d p4) {
 		std::vector<float> ansAry;
-		float r = powf(p4.x, 2) + powf(p4.y, 2) + powf(p4.z, 2);
+		float r = powf(p4.x(), 2) + powf(p4.y(), 2) + powf(p4.z(), 2);
 		float alpha1_pi = toRad(dh_table[1].alpha);
+		//formula = coef1 * x^4 + coef2 * x^3 + coef3 * x^2 + coef4 * x + coef5 = 0
 		float coef1 = powf(r + k3[0] - k3[2], 2) - 4 * powf(dh_table[1].a, 2) * (powf(k1[0] - k1[2], 2) + powf(k2[0] - k2[2], 2)) +
-			4 * powf(dh_table[1].a, 2) / powf(sinf(alpha1_pi), 2) * powf(k4[0] - k4[2] + p4.z, 2);
+			4 * powf(dh_table[1].a, 2) / powf(sin(alpha1_pi), 2) * powf(k4[0] - k4[2] + p4.z(), 2);
 		float coef2 = 4 * k3[1] * (k3[2] - k3[0] - r) + 16 * powf(dh_table[1].a, 2) * (k1[1] * (k1[0] - k1[2]) + k2[1] * (k2[0] - k2[2])) -
-			16 * powf(dh_table[1].a, 2) * k4[1] / powf(sinf(alpha1_pi), 2) * (k4[0] - k4[2] + p4.z);
+			16 * powf(dh_table[1].a, 2) * k4[1] / powf(sin(alpha1_pi), 2) * (k4[0] - k4[2] + p4.z());
 		float coef3 = 2 * powf(r - k3[2], 2) - 2 * powf(k3[0], 2) + 4 * powf(k3[1], 2) +
 			8 * powf(dh_table[1].a, 2) * (powf(k1[0], 2) + powf(k2[0], 2) - 2 * (powf(k1[1], 2) + powf(k2[1], 2)) - powf(k1[2], 2) - powf(k2[2], 2)) +
-			8 * powf(dh_table[1].a, 2) / powf(sinf(alpha1_pi), 2) * (powf(k4[0], 2) + 2 * powf(k4[1], 2) + powf(k4[2] - p4.z, 2));
+			8 * powf(dh_table[1].a, 2) / powf(sin(alpha1_pi), 2) * (powf(k4[0], 2) + 2 * powf(k4[1], 2) + powf(k4[2] - p4.z(), 2));
 		float coef4 = 4 * k3[1] * (k3[0] + k3[2] - r) - 16 * powf(dh_table[1].a, 2) * (k1[1] * (k1[0] + k1[2]) + k2[1] * (k2[0] + k2[2])) +
-			16 * powf(dh_table[1].a, 2) / powf(sinf(alpha1_pi), 2) * k4[1] * (k4[0] + k4[2] - p4.z);
+			16 * powf(dh_table[1].a, 2) / powf(sin(alpha1_pi), 2) * k4[1] * (k4[0] + k4[2] - p4.z());
 		float coef5 = powf(r - k3[0] - k3[2], 2) - 4 * powf(dh_table[1].a, 2) * (powf(k1[0] + k1[2], 2) + powf(k2[0] + k2[2], 2)) +
-			4 * powf(dh_table[1].a, 2) / powf(sinf(alpha1_pi), 2) * powf(k4[0] + k4[2] - p4.z, 2);
-		/*std::cout << "solve j3 coeff:" << std::endl;
-		std::cout << coef1 << std::endl;
-		std::cout << coef2 << std::endl;
-		std::cout << coef3 << std::endl;
-		std::cout << coef4 << std::endl;
-		std::cout << coef5 << std::endl;*/
-		auto ans = Polynomial::solve_quartic_eq(coef1, coef2, coef3, coef4, coef5);
+			4 * powf(dh_table[1].a, 2) / powf(sin(alpha1_pi), 2) * powf(k4[0] + k4[2] - p4.z(), 2);
+		/*std::cout << "j3 solving equation: " << std::endl;
+		std::cout << coef1 << " X^4 + " << coef2 << " X^3 + " << coef3 << " X^2 + " << coef4 << " X + " << coef5 << " = 0" << std::endl;*/
+		auto ans = Polynomial::solve_biquadratic_eq(coef1, coef2, coef3, coef4, coef5);
 		vector<complex<double>> tt;
 		for (int i = 0; i < 4; i++) {
 			tt.push_back(ans[i]);
@@ -225,66 +223,83 @@ private:
 		delete[] ans;
 		return ansAry;
 	}
-
-	vector<float> solveJ2(Vector3f p4, float j3_pi) {
+	vector<float> solveJ2(Vector3d p4, float j3_pi) {
 		vector<float> ansAry;
-		float r = powf(p4.x, 2) + powf(p4.y, 2) + powf(p4.z, 2);
-		float cos3 = cosf(j3_pi);
-		float sin3 = sinf(j3_pi);
+		float r = pow(p4.x(), 2) + pow(p4.y(), 2) + pow(p4.z(), 2);
+		float cos3 = cos(j3_pi);
+		float sin3 = sin(j3_pi);
 		float coef1 = -r - 2 * dh_table[1].a * k1[2] + k3[2] + (k3[0] - 2 * dh_table[1].a * k1[0]) * cos3 + (k3[1] -
 			2 * dh_table[1].a * k1[1]) * sin3;
 		float coef2 = 4 * dh_table[1].a * (k2[2] + k2[0] * cos3 + k2[1] * sin3);
 		float coef3= -r + 2 * dh_table[1].a * k1[2] + k3[2] + (k3[0] + 2 * dh_table[1].a * k1[0]) * cos3 + (k3[1] +
 			2 * dh_table[1].a * k1[1]) * sin3;
-		/*std::cout << "solve j2 coeff:" << std::endl;
-		std::cout << coef1 << std::endl;
-		std::cout << coef2 << std::endl;
-		std::cout << coef3 << std::endl;*/
+		
+		/*std::cout << "j2 solving equation: " << std::endl;
+		std::cout << coef1 << " X^2 + " << coef2 << " X + " << coef3 << " = 0" << std::endl;*/
 		auto ans = Polynomial::solve_quadratic_eq(coef1, coef2, coef3);
 		for (int i = 0; i < 2; i++) {
 			if (abs(ans[i].imag()) <= 1E-6) {
 				float j2_pi = atanf((float)ans[i].real()) * 2;
 				ansAry.push_back(j2_pi);
-				//std::cout << "j2: " << toDeg(j2_pi) << std::endl;
-				//solveJ1(p4, j3_pi, j2_pi);
 			}
-			
 		}
 		delete[] ans;
 		return ansAry;
 	}
-	vector<float> solveJ1(Vector3f p4, float j3_pi, float j2_pi) {
+	vector<float> solveJ1(Vector3d p4, float j3_pi, float j2_pi) {
 		vector<float> ansAry;
-		float cos3 = cosf(j3_pi); float sin3 = sinf(j3_pi);
+		float cos3 = cos(j3_pi); float sin3 = sin(j3_pi);
 		float alpha1 = toRad(dh_table[1].alpha);
 		float alpha2 = toRad(dh_table[2].alpha);
 		float alpha3 = toRad(dh_table[3].alpha);
-		float f1 = dh_table[2].a + dh_table[3].a * cos3 + dh_table[3].d * sinf(alpha3) * sin3;
-		float f2 = -dh_table[2].d * sinf(alpha2) - dh_table[3].d * cosf(alpha3) * sinf(alpha2) - dh_table[3].d *
-			cosf(alpha2) * cos3 * sinf(alpha3) + dh_table[3].a * cosf(alpha2) * sin3;
-		float f3 = dh_table[2].d * cosf(alpha2) + dh_table[3].d * (cosf(alpha2) * cosf(alpha3) - cos3 * sinf(alpha2) * sinf(alpha3)) + 
-			dh_table[3].a * sinf(alpha2) * sin3;
+		float f1 = dh_table[2].a + dh_table[3].a * cos3 + dh_table[3].d * sin(alpha3) * sin3;
+		float f2 = -dh_table[2].d * sin(alpha2) - dh_table[3].d * cos(alpha3) * sin(alpha2) - dh_table[3].d *
+			cos(alpha2) * cos3 * sin(alpha3) + dh_table[3].a * cos(alpha2) * sin3;
+		float f3 = dh_table[2].d * cos(alpha2) + dh_table[3].d * (cos(alpha2) * cos(alpha3) - cos3 * sin(alpha2) * sin(alpha3)) + 
+			dh_table[3].a * sin(alpha2) * sin3;
 
-		float cos2 = cosf(j2_pi); float sin2 = sinf(j2_pi);
+		float cos2 = cos(j2_pi); float sin2 = sin(j2_pi);
 		float g1 = cos2 * f1 - sin2 * f2 + dh_table[1].a;
-		float g2 = sin2 * cosf(alpha1) * f1 + cos2 * cosf(alpha1) * f2 - sinf(alpha1) * f3 - dh_table[1].d * sinf(alpha1);
-		float coef1 = -g1 - p4.x;
+		float g2 = sin2 * cos(alpha1) * f1 + cos2 * cos(alpha1) * f2 - sin(alpha1) * f3 - dh_table[1].d * sin(alpha1);
+		float coef1 = -g1 - p4.x();
 		float coef2 = -2* g2;
-		float coef3= g1 - p4.x;
-		/*std::cout << "solve j1 coeff:" << std::endl;
-		std::cout << coef1 << std::endl;
-		std::cout << coef2 << std::endl;
-		std::cout << coef3 << std::endl;*/
+		float coef3= g1 - p4.x();
+
+		/*std::cout << "j1 solving equation: " << std::endl;
+		std::cout << coef1 << " X^2 + " << coef2 << " X + " << coef3 << " = 0" << std::endl;*/
 		auto ans = Polynomial::solve_quadratic_eq(coef1, coef2, coef3);
 		for (int i = 0; i < 2; i++) {
 			if (abs(ans[i].imag()) <= 1E-6) {
 				float j1_pi = atanf((float)ans[i].real()) * 2;
 				ansAry.push_back(j1_pi);
 			}
-			//std::cout << "j1: " << toDeg(j1_pi) << std::endl;
 		}
 		delete[] ans;
 		return ansAry;
+	}
+
+	/// <summary>
+	/// Check the position of joint 4 that calculated by argument of j1,j2,j3 is match to argument of P4 or not.
+	/// </summary>
+	/// <param name="j1">degree value of j1</param>
+	/// <param name="j2">degree value of j2</param>
+	/// <param name="j3">degree value of j3</param>
+	/// <param name="p4">position of joint 4</param>
+	/// <returns>True means the j1,j2,j3 value are one of the solution of inverse kinematic.</returns>
+	bool validJ4Position(float j1, float j2, float j3, Vector3d p4) {
+		vector<float> jointAngle = { j1,j2,j3 };
+		Matrix4d t03 = Matrix4d::Identity();
+		for (int j = 0; j < 3; j++) {
+			auto param = dh_table[j];
+			t03 = t03 * getTransMat_Craig(DH_param{ param.alpha, param.a, param.d, jointAngle[j] });
+		}
+		auto t04 = t03 * getTransMat_Craig(dh_table[3]);
+
+		Vector3d tp = t04.block<3, 1>(0, 3);
+		auto cd1 = abs(round(tp.x(), 3) - round(p4.x(), 3));
+		auto cd2 = abs(round(tp.y(), 3) - round(p4.y(), 3));
+		auto cd3 = abs(round(tp.z(), 3) - round(p4.z(), 3));
+		return cd1 < 3E-2 && cd2 < 3E-2 && cd3 < 3E-2;
 	}
 };
 

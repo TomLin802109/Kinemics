@@ -1,5 +1,6 @@
 #pragma once
 #include "Matrix.h"
+
 namespace QrMatrix {
 	Matrix4f getRotate_x(float angle_pi) {
 		return Matrix4f{
@@ -93,6 +94,7 @@ namespace QrMatrix {
 		}
 		return Vector3f{ a, b, c };
 	}
+	
 	Vector3f getEulerAngle_zyx(Matrix4f mat) {
 		float a, b, c;
 		if (mat.r20 < 1) {

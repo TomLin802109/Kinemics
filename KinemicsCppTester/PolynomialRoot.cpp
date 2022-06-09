@@ -11,7 +11,7 @@ namespace Polynomial {
         ans[1] = (-complex_b - sqrt(pow(complex_b, 2) - 4.0 * complex_a * complex_c)) / (2.0 * complex_a);
         return ans;
     }
-    std::complex<double>* solve_quartic_eq(double a, double b, double c, double d, double e)
+    std::complex<double>* solve_biquadratic_eq(double a, double b, double c, double d, double e)
     {
         std::complex<double>* ans = new std::complex<double>[4];
         std::complex<double> complex_a{ a };

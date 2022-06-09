@@ -137,6 +137,7 @@
     <ClInclude Include="Kinemics.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="PolynomialRoot.h" />
+    <ClInclude Include="RotationMatrix.h" />
     <ClInclude Include="struct.h" />
   </ItemGroup>
   <ItemGroup>
