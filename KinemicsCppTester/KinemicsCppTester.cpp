@@ -2,7 +2,7 @@
 //
 #include <windows.h>
 #include <iostream>
-#include "Kinemics.h"
+#include "Kinematics.h"
 #include "Matrix.h"
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -22,7 +22,10 @@ int main()
     cout << Eigen::Matrix3d::Identity() << endl;
     cout << (rot_xyz * Eigen::Vector3d(0, 0, 1)).matrix() << endl;*/
     Eigen::Matrix4d m;
-    m << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16;
+    m << 1, 2, 3, 4, 
+        5, 6, 7, 8, 
+        9, 10, 11, 12, 
+        13, 14, 15, 16;
     cout << "m10 = " << m(1, 0) << endl;
     cout << "m01 = " << m(0, 1) << endl;
     cout << "m30 = " << m(3, 0) << endl;
@@ -33,9 +36,9 @@ int main()
 
     //return 0;
     //float j1 = 0, j2 = 0, j3 = 0, j4 = 0, j5 = -90, j6 = 0;
-    float j1 = -45, j2 = -45, j3 = -45, j4 = 0, j5 = -90, j6 = 0;
+    float j1 = 45, j2 = -45, j3 = -50, j4 = 0, j5 = -45, j6 = 30;
     //float j1 = 21.8f, j2 = -52.2f, j3 = 2.5f, j4 = 0, j5 = 0, j6 = 0;
-    //yaskawa
+    //YASKAWA
     vector<DH_param> dhTable = {
         DH_param{0,0,0,0},
         DH_param{-90,155,0,-90},
@@ -45,6 +48,16 @@ int main()
         DH_param{-90,0,0,0},
         DH_param{180,0,100,0}
     };
+    //KAWASAKI
+    /*vector<DH_param> dhTable = {
+        DH_param(0,0,0,90),
+        DH_param(-90,150,0,-90),
+        DH_param(180,770,0,90),
+        DH_param(90,0,805,0),
+        DH_param(-90,0,0,0),
+        DH_param(90,0,0,0),
+        DH_param(0,0,95,90)
+    };*/
     /*vector<DH_param> dhTable{
         DH_param{0,0,0,0},
         DH_param{-90,-30,0,0},
@@ -56,8 +69,8 @@ int main()
     vector<JointLimit> limts = {
         JointLimit{180,-180}
     };
-    RobotSpec spec{ dhTable,limts };
-    RobotArmKinemics _k(spec, WorldCoordinate{ 0,0,150,0,45,0 });
+    RobotSpec spec(dhTable, limts, EulerAngle::XYZ);
+    RobotArmKinematics _k(spec, WorldCoordinate{ 0,0,0,0,0,0 });
 
     LARGE_INTEGER cpuFreq;
     LARGE_INTEGER startTime;
@@ -73,7 +86,7 @@ int main()
     cout << "Forward World: " << w.x << "," << w.y << "," << w.z << "," << w.a << "," << w.b << "," << w.c << endl;
 
     QueryPerformanceCounter(&startTime);
-    //auto j = _k.Inverse(WorldCoordinate{ 381.3f,151.8f,19.5f,0,0,35.0f });
+    //auto j = _k.Inverse(WorldCoordinate{ 795,0,714,180,0,0 });
     auto j = _k.Inverse(w);
     QueryPerformanceCounter(&endTime);
     runTime = (((endTime.QuadPart - startTime.QuadPart) * 1000.0f) / cpuFreq.QuadPart);

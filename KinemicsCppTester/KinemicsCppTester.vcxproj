@@ -134,7 +134,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Extension.h" />
-    <ClInclude Include="Kinemics.h" />
+    <ClInclude Include="Kinematics.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="PolynomialRoot.h" />
     <ClInclude Include="RotationMatrix.h" />

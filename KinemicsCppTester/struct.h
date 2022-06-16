@@ -17,9 +17,15 @@ struct JointLimit {
 	float negative;
 };
 
+enum EulerAngle { XYZ, ZYX, ZYZ };
+
 struct RobotSpec {
 	std::vector<DH_param> dh_table;
 	std::vector<JointLimit> limits;
+	EulerAngle EulerType;
+	RobotSpec(std::vector<DH_param> table, std::vector<JointLimit> limt, EulerAngle type) {
+		this->dh_table = table; this->limits = limt; this->EulerType = type;
+	}
 };
 
 struct PostureCfg {

@@ -6,18 +6,22 @@
 #include "Matrix.h"
 #include <iostream>
 #include <vector>
-
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
 using namespace std;
 
-class RobotArmKinemics {
+class RobotArmKinematics {
 public:
-	RobotArmKinemics(RobotSpec spec, WorldCoordinate tool = WorldCoordinate{0,0,0,0,0,0}) {
+	RobotArmKinematics(RobotSpec spec, WorldCoordinate tool = WorldCoordinate{0,0,0,0,0,0}) {
 		this->dh_table = spec.dh_table;
 		this->limits = spec.limits;
+		this->eulerType = spec.EulerType;
 		this->tool = tool;
+		if (dh_table.size() < 7) {
+			throw std::invalid_argument("The rows of input DH table was lass than 7 rows");
+			return;
+		}
 		k1 = get_coeffs_k1();
 		k2 = get_coeffs_k2();
 		k3 = get_coeffs_k3();
@@ -28,9 +32,10 @@ public:
 		std::cout << "K3 coeff " << k3[0] << "," << k3[1] << "," << k3[2] << std::endl;
 		std::cout << "K4 coeff " << k4[0] << "," << k4[1] << "," << k4[2] << std::endl;
 	}
-	~RobotArmKinemics() {
+	~RobotArmKinematics() {
 		delete[] k1, k2, k3, k4;
 	}
+
 	WorldCoordinate Forward(JointCoordinate jc) {
 		float crd[7]{ jc.j1,jc.j2 ,jc.j3 ,jc.j4 ,jc.j5 ,jc.j6 };
 		Eigen::Matrix4d mat = Eigen::Matrix4d::Identity();
@@ -40,17 +45,16 @@ public:
 			mat = mat * getTransMat_Craig(DH_param{ param.alpha, param.a, param.d, crd[i] + param.theta });
 			std::cout << "No." << i + 1 << endl << mat << endl;
 		}
-		
 		Matrix3d r07 = mat.block<3, 3>(0, 0);
 		Eigen::Vector3d shift = mat.block<3, 3>(0, 0) * Eigen::Vector3d(tool.x, tool.y, tool.z);
-		mat.block<3, 3>(0, 0) = mat.block<3, 3>(0, 0) * RotationMatrix::GetRotate_XYZ(toRad(tool.a), toRad(tool.b), toRad(tool.c));
+		mat.block<3, 3>(0, 0) = mat.block<3, 3>(0, 0) * RotationMatrix::GetRotate(toRad(tool.a), toRad(tool.b), toRad(tool.c), eulerType);
 		std::cout << std::endl << "Final Transformation Matrix" << endl << mat << endl;
-		
-		Eigen::Vector3f angle = RotationMatrix::GetEulerAngle_XYZ(mat.block<3, 3>(0, 0));
-		//return WorldCoordinate{ (float)(mat(0,3) ),(float)(mat(1,3) ), (float)(mat(2,3) ), angle.x(),angle.y(),angle.z() };
-		return WorldCoordinate{ (float)(mat(0,3) + shift(0,0)),(float)(mat(1,3) + shift(1,0)), (float)(mat(2,3) + shift(2,0)), angle.x(),angle.y(),angle.z() };
+		Eigen::Vector3f angle = RotationMatrix::GetEulerAngle(mat.block<3, 3>(0, 0), eulerType);
+		return WorldCoordinate{ (float)round(mat(0,3) + shift(0,0),2),(float)round(mat(1,3) + shift(1,0),2), (float)round(mat(2,3) + shift(2,0),2),
+								round(angle.x(),2), round(angle.y(),2), round(angle.z(),2) };
 	};
-	JointCoordinate Inverse(WorldCoordinate rc, PostureCfg cfg = PostureCfg{}) {
+
+	JointCoordinate Inverse(WorldCoordinate rc, PostureCfg cfg = PostureCfg()) {
 		//Calculate the transformation matrix from base to flange.
 		Matrix4d t07 = Matrix4d::Identity();
 		Matrix3d toolRot = RotationMatrix::GetRotate_XYZ(toRad(tool.a), toRad(tool.b), toRad(tool.c));
@@ -73,12 +77,15 @@ public:
 		for (int i = 0; i < j3s_pi.size(); i++) {
 			auto j2s_pi = solveJ2(p4, j3s_pi[i]);
 			for (int j = 0; j < j2s_pi.size(); j++) {
+				double tmp2 = toDeg(j2s_pi[j]);
 				auto j1s_pi = solveJ1(p4, j3s_pi[i], j2s_pi[j]);
 				for (int k = 0; k < j1s_pi.size(); k++) {
 					if (validJ4Position(toDeg(j1s_pi[k]), toDeg(j2s_pi[j]), toDeg(j3s_pi[i]), p4)) {
 						std::cout << "Correct solution of (J1, J2, J3) = (" << toDeg(j1s_pi[k]) << "," << toDeg(j2s_pi[j]) << "," << toDeg(j3s_pi[i]) << ")" << std::endl;
 						jointSols.push_back(JointCoordinate{ toDeg(j1s_pi[k]),toDeg(j2s_pi[j]),toDeg(j3s_pi[i]) });
 					}
+					else 
+						std::cout << "Incorrect solution of (J1, J2, J3) = (" << toDeg(j1s_pi[k]) << "," << toDeg(j2s_pi[j]) << "," << toDeg(j3s_pi[i]) << ")" << std::endl;
 				}
 			}
 		}
@@ -90,40 +97,31 @@ public:
 				auto param = dh_table[j];
 				t03 = t03 * getTransMat_Craig(DH_param{ param.alpha, param.a, param.d, jointAngle[j] });
 			}
-			Matrix4d t46 = t03.inverse() * t06;
-			Vector3f eulerAngle = RotationMatrix::GetEulerAngle_ZYZ(t46.block<3, 3>(0, 0));
-			jointSols[i].j4 = eulerAngle.x();
-			jointSols[i].j5 = eulerAngle.y();
-			jointSols[i].j6 = eulerAngle.z();
+			
+			Matrix3d r03 = t03.block<3, 3>(0, 0);
+			Matrix3d r06 = t06.block<3, 3>(0, 0);
+			Matrix3d r46 = (r03 * RotationMatrix::GetRotate_X(toRad(dh_table[3].alpha))).inverse() * r06;
+			std::cout << "T03 = " << std::endl << t03 << std::endl;
+			Vector3f eulerAngle = RotationMatrix::GetEulerAngle_ZYZ(r46);
+			jointSols[i].j1 = round(jointSols[i].j1 - dh_table[0].theta, 2);
+			jointSols[i].j2 = round(jointSols[i].j2 - dh_table[1].theta, 2);
+			jointSols[i].j3 = round(jointSols[i].j3 - dh_table[2].theta, 2);
+			jointSols[i].j4 = round(eulerAngle.x(), 2);
+			jointSols[i].j5 = round(-eulerAngle.y(), 2);
+			jointSols[i].j6 = round(eulerAngle.z(), 2);
+
 			std::cout << "(J4,J5,J6) = (" << eulerAngle.x() << ", " << eulerAngle.y() << ", " << eulerAngle.z() << ")" << endl;
 		}
-		
-		//Eigen::AngleAxisd rotx(toRad(rc.a), Eigen::Vector3d(1, 0, 0));
-		//Eigen::AngleAxisd roty(toRad(rc.b), Eigen::Vector3d(0, 1, 0));
-		//Eigen::AngleAxisd rotz(toRad(rc.c), Eigen::Vector3d(0, 0, 1));
-		//
-		//Eigen::Matrix4d tr06 = Eigen::Matrix4d::Identity();
-		//tr06.block<3, 3>(0, 0) = (rotx * roty * rotz).matrix();
-		//tr06.block<3, 1>(0, 3) = Eigen::Vector3d(rc.x, rc.y, rc.z);
-		//cout << "T06 = " << endl << tr06 << endl;
-		//for (int i = 0; i < joints.size(); i++) {
-		//	Eigen::Matrix4d rot;
-		//	rot << rots[i].r00, rots[i].r01, rots[i].r02, rots[i].r03,
-		//		rots[i].r10, rots[i].r11, rots[i].r12, rots[i].r13,
-		//		rots[i].r20, rots[i].r21, rots[i].r22, rots[i].r23,
-		//		rots[i].r30, rots[i].r31, rots[i].r32, rots[i].r33;
-		//	Eigen::Matrix4d t46 = (rot.inverse() * tr06);
-		//	cout << "T03 = " << endl << rot << endl;
-		//	auto eulerAngle = getEulerAngle_xyz(t46);
-		//	cout << "(J4,J5,J6)= (" << eulerAngle.x << "," << eulerAngle.y << "," << eulerAngle.z << ")" << endl;
-		//}
-
-		
+		std::cout << "Final Inverse Kinematics Solutions" << std::endl;
+		for (int i = 0; i < jointSols.size(); i++) {
+			std::cout << "Sol" << i << " = (" << jointSols[i].j1 << ", " << jointSols[i].j2 << ", " << jointSols[i].j3 << ", " << jointSols[i].j4 << ", " << jointSols[i].j5 << ", " << jointSols[i].j6 << ")" << std::endl;
+		}
 		return JointCoordinate{};
 	}
 private:
 	vector<DH_param> dh_table;
 	vector<JointLimit> limits;
+	EulerAngle eulerType;
 	WorldCoordinate tool;
 	double* k1;
 	double* k2;
@@ -216,7 +214,7 @@ private:
 		vector<complex<double>> tt;
 		for (int i = 0; i < 4; i++) {
 			tt.push_back(ans[i]);
-			if (abs(ans[i].imag()) <= 1E-6) {
+			if (abs(ans[i].imag()) <= 1E-2) {
 				ansAry.push_back(atanf((float)ans[i].real()) * 2.0f);
 			}
 		}
@@ -238,7 +236,7 @@ private:
 		std::cout << coef1 << " X^2 + " << coef2 << " X + " << coef3 << " = 0" << std::endl;*/
 		auto ans = Polynomial::solve_quadratic_eq(coef1, coef2, coef3);
 		for (int i = 0; i < 2; i++) {
-			if (abs(ans[i].imag()) <= 1E-6) {
+			if (abs(ans[i].imag()) <= 1E-2) {
 				float j2_pi = atanf((float)ans[i].real()) * 2;
 				ansAry.push_back(j2_pi);
 			}
@@ -269,7 +267,7 @@ private:
 		std::cout << coef1 << " X^2 + " << coef2 << " X + " << coef3 << " = 0" << std::endl;*/
 		auto ans = Polynomial::solve_quadratic_eq(coef1, coef2, coef3);
 		for (int i = 0; i < 2; i++) {
-			if (abs(ans[i].imag()) <= 1E-6) {
+			if (abs(ans[i].imag()) <= 1E-2) {
 				float j1_pi = atanf((float)ans[i].real()) * 2;
 				ansAry.push_back(j1_pi);
 			}

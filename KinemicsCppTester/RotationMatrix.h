@@ -1,7 +1,7 @@
 #pragma once
 #include <Eigen/Core>
 #include <Eigen/Geometry>
-
+#include "struct.h"
 #include "Extension.h"
 
 using namespace Eigen;
@@ -30,6 +30,18 @@ public:
 	}
 	static Matrix3d GetRotate_ZYZ(double z_pi1, double y_pi, double z_pi2) {
 		return GetRotate_Z(z_pi1) * GetRotate_Y(y_pi) * GetRotate_Z(z_pi2);
+	}
+	static Matrix3d GetRotate(double a_pi, double b_pi, double c_pi, EulerAngle type) {
+		switch (type) {
+		case EulerAngle::XYZ:
+			return GetRotate_XYZ(a_pi, b_pi, c_pi);
+		case EulerAngle::ZYX:
+			return GetRotate_ZYX(a_pi, b_pi, c_pi);
+		case EulerAngle::ZYZ:
+			return GetRotate_ZYZ(a_pi, b_pi, c_pi);
+		default:
+			return Matrix3d::Zero();
+		}
 	}
 
 	static Vector3f GetEulerAngle_XYZ(Eigen::Matrix3d mat) {
@@ -94,6 +106,18 @@ public:
 			c = 0.0f;
 		}
 		return Vector3f( a,b,c );
+	}
+	static Vector3f GetEulerAngle(Matrix3d mat, EulerAngle type) {
+		switch (type) {
+		case EulerAngle::XYZ:
+			return GetEulerAngle_XYZ(mat);
+		case EulerAngle::ZYX:
+			return GetEulerAngle_ZYX(mat);
+		case EulerAngle::ZYZ:
+			return GetEulerAngle_ZYZ(mat);
+		default:
+			return Vector3f(0,0,0);
+		}
 	}
 };
 

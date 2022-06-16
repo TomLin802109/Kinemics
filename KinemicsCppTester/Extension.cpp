@@ -18,7 +18,7 @@ double toDeg(double rad) {
 
 float round(float num, int index) {
 	auto multiplier = pow(10, index);
-	return round(num * multiplier) / multiplier;
+	return roundf(num * multiplier) / multiplier;
 };
 
 double round(double num, int index) {

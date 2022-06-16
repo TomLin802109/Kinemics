@@ -35,7 +35,7 @@
     <ClInclude Include="Extension.h">
       <Filter>標頭檔</Filter>
     </ClInclude>
-    <ClInclude Include="Kinemics.h">
+    <ClInclude Include="Kinematics.h">
       <Filter>標頭檔</Filter>
     </ClInclude>
     <ClInclude Include="PolynomialRoot.h">
